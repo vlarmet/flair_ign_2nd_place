@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from osgeo import gdal
 
-def read_image(image_path, mask=False, normalize = True, standardize = True, channel_order = [0,1,2,3,4]):
+def read_image(image_path, mask=False):
     
     im = gdal.Open(image_path)
     if mask:
@@ -10,7 +10,7 @@ def read_image(image_path, mask=False, normalize = True, standardize = True, cha
         image = np.where(np.isin(image, [19,13,14,15,16,17,18]), 13, image) - 1
 
     else:
-        image = im.ReadAsArray().transpose().astype(np.float32)[:,:,channel_order]      # rgb
+        image = im.ReadAsArray().transpose().astype(np.float32)[:,:,channel_order]   
         if normalize:
             image /= 255.0
         if standardize:
@@ -26,9 +26,12 @@ def read_image(image_path, mask=False, normalize = True, standardize = True, cha
     return image
 
 
-
 class Datagen(tf.keras.utils.Sequence):
-    def __init__(self, path_list, batch_size, random_state, val_rate, train, return_x_only = False, resize_label = True, resize_x = True, augment = None):
+    def __init__(self, path_list, batch_size, random_state, val_rate, 
+                 train, return_x_only = False, augment = None, 
+                 normalize = True,
+                 standardize = True, channel_order = [0,1,2,3,4],
+                 pytorch_style = False):
 
         self.batch_size = batch_size
         self.random_state = random_state
@@ -45,9 +48,11 @@ class Datagen(tf.keras.utils.Sequence):
         self.current_index = 0
         self.num_batch = 0
         self.return_x_only = return_x_only
-        self.resize_label = resize_label
-        self.resize_x = resize_x
         self.augment = augment
+        self.normalize = normalize
+        self.standardize = standardize
+        self.channel_order = channel_order
+        self.pytorch_style = pytorch_style
 
     def __augment(self, x, y):
         aug = self.augment(image = x, mask = y)
@@ -82,29 +87,46 @@ class Datagen(tf.keras.utils.Sequence):
         y = []
         
         for img_path, msk_path in batch_ids:
-            x.append(read_image(img_path, mask=False, resize=self.resize_x))
-            y.append(read_image(msk_path, mask=True, resize = self.resize_label))
+            x.append(read_image(img_path, mask=False))
+            y.append(read_image(msk_path, mask=True))
 
 
         if len(x) == 0:
             print(self.current_index)
 
             for img_path, msk_path in self.ids[0:(0 + self.batch_size)]:
-                x.append(read_image(img_path, mask=False, resize=self.resize_x))
-                y.append(read_image(msk_path, mask=True, resize = self.resize_label))
+                x.append(read_image(img_path, mask=False))
+                y.append(read_image(msk_path, mask=True))
 
 
         x = np.concatenate([np.expand_dims(img, axis=0) for img in x], axis=0)#[:,:3,:,:] # rgb
         y = np.concatenate([np.expand_dims(msk, axis=0) for msk in y], axis=0)
         
+        if self.pytorch_style:
+            x = x.transpose((0,2,3,1))
+
         if self.augment is not None:
             for i in range(x.shape[0]):
                 new_x, new_y = self.__augment(x[i,:,:,:].astype(np.uint8), y[i,:,:])
                 x[i,:,:,:] = new_x
                 y[i,:,:] = new_y
 
-       
-        x = x.astype(np.float32)       
+        x = x.astype(np.float32)
+
+        if self.normalize:
+            x = x/255.0
+
+        if self.standardize:
+
+            for channel,avg,std in zip(
+                [0,1,2], # ,3,4
+                [0.44050665, 0.45704361, 0.42254708], #, 0.40987858, 0.06875153],
+                [0.20264351, 0.1782405 , 0.17575739]):# , 0.15510736, 0.11867123]):
+
+                x[:,i,:,:] = ((x[:,i,:,:]) - avg)/std
+
+        if self.pytorch_style:
+            x = x.transpose((0,3,1,2))
 
         self.current_index += self.batch_size
         self.num_batch += 1
