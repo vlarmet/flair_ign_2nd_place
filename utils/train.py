@@ -2,24 +2,24 @@ import numpy as np
 import tensorflow as tf
 from osgeo import gdal
 
-def read_image(image_path, mask=False):
+def read_image(image_path, mask=False, normalize = True, standardize = True, channel_order = [0,1,2,3,4]):
     
     im = gdal.Open(image_path)
     if mask:
         image = im.ReadAsArray().transpose()
         image = np.where(np.isin(image, [19,13,14,15,16,17,18]), 13, image) - 1
 
-        #image = to_categorical(image).astype(np.float32)
-        #image = np.expand_dims(image, axis = 2)
     else:
-        image = im.ReadAsArray().transpose().astype(np.float32)[:,:,[0,1,2]]      # rgb
-        #image = image / 127.5 - 1
-        #image = image / 255.0
-        '''
-        for i, (avg, std) in enumerate(zip(np.array([0.485, 0.456, 0.406]), np.array([0.229, 0.224, 0.225]))):
-          image[:,:,i] = ((image[:,:,i]/255.0) - avg)/std
-        '''
-
+        image = im.ReadAsArray().transpose().astype(np.float32)[:,:,channel_order]      # rgb
+        if normalize:
+            image /= 255.0
+        if standardize:
+            for channel, avg, std in zip(
+                range(image.shape[2]),
+                [0.44050665, 0.45704361, 0.42254708, 0.40987858, 0.06875153],
+                [0.20264351, 0.1782405 , 0.17575739, 0.15510736, 0.11867123]
+            ):
+                image[:,:,channel] = (image[:,:,channel] - avg)/std
 
     im = None
 
