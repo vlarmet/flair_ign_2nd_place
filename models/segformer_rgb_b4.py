@@ -8,7 +8,6 @@ from tensorflow.keras import backend as K
 from sklearn.model_selection import train_test_split
 from osgeo import gdal
 from transformers import TFSegformerForSemanticSegmentation, SegformerConfig
-import albumentations as A
 
 # import function defined in utils/train.py 
 file_path = os.path.realpath(__file__)
@@ -18,8 +17,8 @@ sys.path.append(file_root + "/utils")
 from train import *
 
 # Global parameters
-BATCH_SIZE = 8
-CHECKPOINT_NAME = "model_512_segnetb1_rgb_aug_val1000"
+BATCH_SIZE = 2
+CHECKPOINT_NAME = "model_512_segnetb4_rgb_val1000"
 LR = 0.0001
 
 # Image and mask paths
@@ -33,19 +32,10 @@ for dep in os.listdir(DATA_DIR):
             msk_path = img_path.replace("/img/IMG_", "/msk/MSK_")
             img_paths.append((img_path, msk_path))
 
-# Augmentation policy
-transforms = A.Compose([
-            A.Rotate(limit=360),
-            A.RandomBrightness(limit=0.1),
-            A.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=0.5),
-            A.RandomContrast(limit=0.2, p=0.5),
-            A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p = 0.5)
-        ])
 
 # Model
 model = TFSegformerForSemanticSegmentation.from_pretrained(
-    SEGFORMER_IMAGENET_PATH + "mit_b1",
+    SEGFORMER_IMAGENET_PATH + "mit_b4",
     num_labels=13
 )
 
@@ -76,7 +66,7 @@ train_path, val_path = train_test_split(img_paths, test_size = 1000, random_stat
 # Data generators
 train_gen = Datagen(train_path, batch_size = BATCH_SIZE, random_state = 10, val_rate=0, 
                     train=True, 
-                    augment=transforms,
+                    augment=None,
                     normalize = True,
                     standardize = True, 
                     channel_order = [0,1,2],
