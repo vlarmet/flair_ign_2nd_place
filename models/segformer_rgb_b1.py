@@ -17,7 +17,7 @@ sys.path.append(file_root + "/utils")
 from train import *
 
 BATCH_SIZE = 8
-CHECKPOINT_NAME = "model_512_segnetb0_rgb_aug_val1000"
+CHECKPOINT_NAME = "model_512_segnetb1_rgb_aug_val1000"
 LR = 0.0001
 
 img_paths = []
@@ -42,7 +42,7 @@ transforms = A.Compose([
 
 
 model = TFSegformerForSemanticSegmentation.from_pretrained(
-    SEGFORMER_IMAGENET_PATH + "mit_b0",
+    SEGFORMER_IMAGENET_PATH + "mit_b1",
     num_labels=13
 )
 

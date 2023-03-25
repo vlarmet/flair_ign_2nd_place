@@ -4,6 +4,7 @@ import tensorflow as tf
 from osgeo import gdal
 
 DATA_DIR = "C:/Users/vincent/Documents/flair/train"
+SEGFORMER_IMAGENET_PATH = "C:/Users/vincent/Downloads/"
 CHECKPOINT_DIR = "C:/Users/vincent/Documents/flair/"
 
 
