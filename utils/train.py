@@ -1,6 +1,11 @@
 import numpy as np
+import math
 import tensorflow as tf
 from osgeo import gdal
+
+DATA_DIR = "C:/Users/vincent/Documents/flair/train"
+CHECKPOINT_DIR = "C:/Users/vincent/Documents/flair/"
+
 
 def read_image(image_path, mask=False):
     
@@ -10,21 +15,39 @@ def read_image(image_path, mask=False):
         image = np.where(np.isin(image, [19,13,14,15,16,17,18]), 13, image) - 1
 
     else:
-        image = im.ReadAsArray().transpose().astype(np.float32)[:,:,channel_order]   
-        if normalize:
-            image /= 255.0
-        if standardize:
-            for channel, avg, std in zip(
-                range(image.shape[2]),
-                [0.44050665, 0.45704361, 0.42254708, 0.40987858, 0.06875153],
-                [0.20264351, 0.1782405 , 0.17575739, 0.15510736, 0.11867123]
-            ):
-                image[:,:,channel] = (image[:,:,channel] - avg)/std
+        image = im.ReadAsArray().transpose()
 
     im = None
 
     return image
 
+def my_loss(weights):
+    def loss(labels, logits):
+        labels = tf.cast(labels, tf.int32)
+        return tf.compat.v1.losses.sparse_softmax_cross_entropy(labels, logits, tf.gather(weights, labels)) #tf.gather(weights, labels)
+    return loss
+
+
+def my_loss_segformer(weights):
+    def loss(labels, logits):
+        logits = tf.image.resize(tf.transpose(logits, perm = (0,2,3,1)), size=(512,512), method="bilinear")
+        
+        labels = tf.cast(labels, tf.int32)
+        return tf.compat.v1.losses.sparse_softmax_cross_entropy(labels, logits, tf.gather(weights, labels)) 
+    return loss
+
+class MyMeanIOU(tf.keras.metrics.MeanIoU):
+    def update_state(self, y_true, y_pred, sample_weight=np.array([1,1,1,1,1,1,1,1,1,1,1,1,0])):
+
+        return super().update_state(y_true, tf.argmax(y_pred, axis=-1), tf.gather(np.array([1,1,1,1,1,1,1,1,1,1,1,1,0]), tf.cast(y_true, tf.int32)))
+        
+
+class MyMeanIOU_segformer(tf.keras.metrics.MeanIoU):
+    def update_state(self, y_true, y_pred, sample_weight=np.array([1,1,1,1,1,1,1,1,1,1,1,1,0])):
+        y_pred = tf.image.resize(tf.transpose(y_pred, perm = (0,2,3,1)), size=(512,512), method="bilinear")
+
+        return super().update_state(y_true, tf.argmax(y_pred, axis=-1), tf.gather(np.array([1,1,1,1,1,1,1,1,1,1,1,1,0]), tf.cast(y_true, tf.int32)))
+        
 
 class Datagen(tf.keras.utils.Sequence):
     def __init__(self, path_list, batch_size, random_state, val_rate, 
@@ -99,12 +122,10 @@ class Datagen(tf.keras.utils.Sequence):
                 y.append(read_image(msk_path, mask=True))
 
 
-        x = np.concatenate([np.expand_dims(img, axis=0) for img in x], axis=0)#[:,:3,:,:] # rgb
+        x = np.concatenate([np.expand_dims(img, axis=0) for img in x], axis=0)
+        x = x[:,:,:,self.channel_order]
         y = np.concatenate([np.expand_dims(msk, axis=0) for msk in y], axis=0)
         
-        if self.pytorch_style:
-            x = x.transpose((0,2,3,1))
-
         if self.augment is not None:
             for i in range(x.shape[0]):
                 new_x, new_y = self.__augment(x[i,:,:,:].astype(np.uint8), y[i,:,:])
@@ -117,22 +138,18 @@ class Datagen(tf.keras.utils.Sequence):
             x = x/255.0
 
         if self.standardize:
-
             for channel,avg,std in zip(
-                [0,1,2], # ,3,4
-                [0.44050665, 0.45704361, 0.42254708], #, 0.40987858, 0.06875153],
-                [0.20264351, 0.1782405 , 0.17575739]):# , 0.15510736, 0.11867123]):
+                range(len(self.channel_order)),
+                [0.44050665, 0.45704361, 0.42254708, 0.40987858, 0.06875153], 
+                [0.20264351, 0.1782405 , 0.17575739, 0.15510736, 0.11867123]):
 
-                x[:,i,:,:] = ((x[:,i,:,:]) - avg)/std
+                x[:,:,:,channel] = ((x[:,:,:,channel]) - avg)/std
 
         if self.pytorch_style:
             x = x.transpose((0,3,1,2))
 
         self.current_index += self.batch_size
         self.num_batch += 1
-        
-        # augmentation
-        #x, y = self.__data_augmentation(x, y)
 
 
         if self.return_x_only:
