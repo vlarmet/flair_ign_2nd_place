@@ -32,7 +32,7 @@ CHECKPOINT_DIR = "C:/Users/vincent/Documents/flair/"
 
 class Vmodel:
     def __init__(self, model, name=None, tta=None, pytorch_style=False, 
-                 normalize=True, standardize=True, channel_order=[0,1,2,3,4], resize=False, softmax=True) -> None:
+                 normalize=True, standardize=True, channel_order=[0,1,2,3,4], softmax=True) -> None:
         self.model = model
         self.name = name
         self.tta = tta
@@ -40,10 +40,10 @@ class Vmodel:
         self.normalize = normalize
         self.standardize = standardize
         self.channel_order = channel_order
-        self.resize = resize
         self.softmax = softmax
 
     def predict(self, image) -> np.ndarray:
+        #print(self.name, image[0,:2,:2,0])
         image = image.astype(np.float32)
 
         if self.normalize:
@@ -51,12 +51,12 @@ class Vmodel:
 
         if self.standardize :
             for channel,avg,std in zip(
-                range(len(self.channel_order)),
+                self.channel_order,
                 [0.44050665, 0.45704361, 0.42254708, 0.40987858, 0.06875153], 
                 [0.20264351, 0.1782405 , 0.17575739, 0.15510736, 0.11867123]):
 
                 image[:,:,:,channel] = ((image[:,:,:,channel]) - avg)/std
-        
+        #print(self.name, image[0,:2,:2,0])
         # keep used channel in correct order
         image = image[:,:,:,self.channel_order]
 
@@ -70,6 +70,7 @@ class Vmodel:
                 pred = list(self.model.predict(image).values())[0]
 
             pred = pred.transpose((0,2,3,1))
+            
 
         else:
             if self.tta is not None:
@@ -82,8 +83,6 @@ class Vmodel:
         if self.softmax:
             pred = K.softmax(pred, axis = -1)
 
-        if self.resize:
-            pred = tf.image.resize(pred, size = [512,512], method="bilinear")
 
         return pred
     
@@ -120,7 +119,6 @@ def load_models(unet_efficientnetv2s = True,
     normalize : divide by 255 (default True)
     standardize : imagenet stats standardization after normalization (default True)
     channel_order : channel order by index (default [0,1,2,3,4])
-    resize : resize output to (512,512) (default False)
     softmax : use softmax activation (default True)
     '''
     models = []
@@ -147,10 +145,11 @@ def load_models(unet_efficientnetv2s = True,
         mod = Vmodel(model = model, name = "effnetv2S", 
                     tta = tta, 
                     normalize = False, standardize = False, 
-                    channel_order = [2,1,0,3,4])
+                    channel_order = [2,1,0,3,4],
+                    softmax=False)
 
         models.append(mod)
-    
+        
     if unetpp_convnext:
         # Unet++ convnext tiny 5 channels
         x = tf.keras.layers.Input(shape=(512,512,5))
@@ -170,9 +169,11 @@ def load_models(unet_efficientnetv2s = True,
 
         mod = Vmodel(model = model, name = "convnext", 
                     tta = tta, 
-                    channel_order = [2,1,0,3,4])
+                    standardize=False,
+                    channel_order = [2,1,0,3,4],
+                    softmax=False)
         models.append(mod)
-
+        
     if segformerb0_5c:
         # Segformer b0 5 channels
         config = SegformerConfig(
@@ -185,9 +186,9 @@ def load_models(unet_efficientnetv2s = True,
         model.load_weights(CHECKPOINT_DIR + "model_512_segnetb0_val1000")
 
         mod = Vmodel(model = model, name = "segb0_5c", 
-                            pytorch_style = True, resize = True)
+                            pytorch_style = True)
         models.append(mod)
-
+        
     if segformerb1_5c:
         # Segformer b1 5 channels
         config = SegformerConfig(
@@ -203,10 +204,9 @@ def load_models(unet_efficientnetv2s = True,
         model.load_weights(CHECKPOINT_DIR + "model_512_segnetb1_val1000")
 
         mod = Vmodel(model = model, name = "segb1_5c", 
-                    pytorch_style = True, 
-                    resize = True)
+                    pytorch_style = True)
         models.append(mod)
-
+        
     if segformerb0_rgb:
         config = SegformerConfig(
             num_channels=3, 
@@ -219,10 +219,9 @@ def load_models(unet_efficientnetv2s = True,
 
         mod = Vmodel(model = model, name = "segb0_rgb", 
             pytorch_style = True, 
-            channel_order=[0,1,2],
-            resize = True)
+            channel_order=[0,1,2])
         models.append(mod)
-
+        
     if segformerb1_rgb:
         config = SegformerConfig(
             num_channels=3, 
@@ -238,10 +237,9 @@ def load_models(unet_efficientnetv2s = True,
 
         mod = Vmodel(model = model, name = "segb1_rgb", 
             pytorch_style = True, 
-            channel_order=[0,1,2],
-            resize = True)
+            channel_order=[0,1,2])
         models.append(mod)
-
+        
     if segformerb2_rgb:
         config = SegformerConfig(
             num_channels=3, 
@@ -257,10 +255,9 @@ def load_models(unet_efficientnetv2s = True,
 
         mod = Vmodel(model = model, name = "segb2_rgb", 
             pytorch_style = True, 
-            channel_order=[0,1,2],
-            resize = True)
+            channel_order=[0,1,2])
         models.append(mod)
-    
+        
     if segformerb3_rgb:
         config = SegformerConfig(
             num_channels=3, 
@@ -276,10 +273,9 @@ def load_models(unet_efficientnetv2s = True,
 
         mod = Vmodel(model = model, name = "segb3_rgb", 
             pytorch_style = True, 
-            channel_order=[0,1,2],
-            resize = True)
+            channel_order=[0,1,2])
         models.append(mod)
-
+        
     if segformerb4_rgb:
         config = SegformerConfig(
             num_channels=3, 
@@ -295,14 +291,27 @@ def load_models(unet_efficientnetv2s = True,
 
         mod = Vmodel(model = model, name = "segb4_rgb", 
             pytorch_style = True, 
-            channel_order=[0,1,2],
-            resize = True)
+            channel_order=[0,1,2])
         models.append(mod)
-
+        
     return models
 
 
-def predict_ensemble(model_list, img):
-    preds = [model.predict(img) for model in model_list]
-    preds = np.mean(np.array(preds), axis = 0)
+def predict_ensemble(model_list, img, size_list = [128, 512], target_size = 512):
+    img2 = copy.deepcopy(img)
+    preds = [model.predict(img2) for model in model_list]
+    # We average each predictions for each output size. We resize after
+    res = []
+    N = []
+    for size in size_list:
+        tmp = [pred for pred in preds if pred.shape[2] == size]
+        N.append(len(tmp))
+        tmp = np.mean(np.array(tmp), axis = 0)
+        if size != target_size:
+            tmp = tf.image.resize(tmp, size = [512,512], method = "bilinear")
+        res.append(tmp)
+
+    preds = np.sum([n * pred for n, pred in zip(N, res)], axis = 0)/np.sum(N)
     return preds
+
+##################### Mosaique 

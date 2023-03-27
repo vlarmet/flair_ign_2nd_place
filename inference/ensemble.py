@@ -6,6 +6,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras import backend as K
 from osgeo import gdal
+from tqdm import tqdm
 
 
 # Import functions defined in utils/inference.py
@@ -19,7 +20,7 @@ from inference import *
 
 DATA_DIR = "C:/Users/vincent/Documents/flair/test/"
 OUTPUT_DIR = "C:/Users/vincent/Documents/flair/predictions_test/"
-BATCH_SIZE = 8
+BATCH_SIZE = 4
 
 # Test image paths
 img_paths = []
@@ -30,6 +31,7 @@ for dep in os.listdir(DATA_DIR):
                 continue
             img_path = "/".join([DATA_DIR, dep, zone, "img", img])
             img_paths.append(img_path)
+
 
 
 ################################################## LOAD MODELS
@@ -51,11 +53,13 @@ list_of_models = load_models(**models_to_load)
 im1 = gdal.Open(img_paths[0])
 
 # Predict all tiles
-for i in range(0, len(img_paths), BATCH_SIZE):
+for i in tqdm(range(0, len(img_paths), BATCH_SIZE)):
+    if i == 48:
+        break
     images = [np.expand_dims(gdal.Open(img_path).ReadAsArray().transpose((1,2,0)) , axis = 0) for img_path in img_paths[i:i+BATCH_SIZE]]
     images = np.concatenate(images, axis = 0)
     names = [img_path.split("/")[-1][4:] for img_path in img_paths[i:i+BATCH_SIZE]]
-    pred = predict_ensemble(list_of_models, images)
+    pred = predict_ensemble(list_of_models, images, size_list = [128, 512], target_size = 512)
     pred = np.argmax(pred, axis = -1)
     # export
     for index, name in enumerate(names):
@@ -67,6 +71,3 @@ for i in range(0, len(img_paths), BATCH_SIZE):
         dataset.SetProjection(proj)
         dataset.FlushCache()
         dataset=None
-
-
-
