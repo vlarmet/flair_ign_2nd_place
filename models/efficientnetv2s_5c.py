@@ -16,7 +16,7 @@ sys.path.append(file_root + "/utils")
 
 from train import *
 
-# Import convnext architecture (not available for tensorflow v2.6)
+# Import effficientnet_v2 architecture (not available for tensorflow v2.6)
 
 from effficientnet_v2 import *
 
