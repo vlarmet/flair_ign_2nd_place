@@ -14,7 +14,7 @@ file_path = os.path.realpath(__file__)
 file_root = "/".join(file_path.replace("\\", "/").split("/")[:-2])
 sys.path.append(file_root + "/utils")
 
-from train import *
+import train as tr
 
 # Import convnext architecture (not available for tensorflow v2.6)
 
@@ -38,12 +38,12 @@ LR = 0.0001
 
 # Image and mask paths
 img_paths = []
-for dep in os.listdir(DATA_DIR):
-    for zone in os.listdir("/".join([DATA_DIR, dep])):
-        for img in os.listdir("/".join([DATA_DIR, dep, zone, "img"])):
+for dep in os.listdir(tr.DATA_DIR):
+    for zone in os.listdir("/".join([tr.DATA_DIR, dep])):
+        for img in os.listdir("/".join([tr.DATA_DIR, dep, zone, "img"])):
             if img.__contains__("xml"):
                 continue
-            img_path = "/".join([DATA_DIR, dep, zone, "img", img])
+            img_path = "/".join([tr.DATA_DIR, dep, zone, "img", img])
             msk_path = img_path.replace("/img/IMG_", "/msk/MSK_")
             img_paths.append((img_path, msk_path))
 
@@ -103,17 +103,17 @@ stopping = tf.keras.callbacks.EarlyStopping(
 
 ## Checkpoint
 model_checkpoint_callback  = tf.keras.callbacks.ModelCheckpoint(
-CHECKPOINT_DIR + CHECKPOINT_NAME, monitor='val_loss', verbose=0, save_best_only=True,
+tr.CHECKPOINT_DIR + CHECKPOINT_NAME, monitor='val_loss', verbose=0, save_best_only=True,
 save_weights_only=True, mode='min', save_freq='epoch')
 
 ## Metric 
-metrics = [MyMeanIOU(num_classes = 13)]
+metrics = [tr.MyMeanIOU(num_classes = 13)]
 
 # Train/validation split
 train_path, val_path = train_test_split(img_paths, test_size = 1000, random_state=42)
 
 # Data generators
-train_gen = Datagen(train_path, batch_size = BATCH_SIZE, random_state = 10, val_rate=0, 
+train_gen = tr.Datagen(train_path, batch_size = BATCH_SIZE, random_state = 10, val_rate=0, 
                     train=True, 
                     augment= None,
                     normalize = True,
@@ -121,7 +121,7 @@ train_gen = Datagen(train_path, batch_size = BATCH_SIZE, random_state = 10, val_
                     channel_order = [2,1,0,3,4],
                     pytorch_style = False) 
 
-val_gen = Datagen(val_path, batch_size = BATCH_SIZE, random_state = 10, val_rate=1, 
+val_gen = tr.Datagen(val_path, batch_size = BATCH_SIZE, random_state = 10, val_rate=1, 
                   train=False, 
                   normalize = True,
                   standardize = False, 
@@ -129,7 +129,7 @@ val_gen = Datagen(val_path, batch_size = BATCH_SIZE, random_state = 10, val_rate
                   pytorch_style = False)
 
 # Compile model
-model.compile(optimizer = optim, loss = my_loss(np.array([1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0]).astype(np.float32))
+model.compile(optimizer = optim, loss = tr.my_loss(np.array([1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0]).astype(np.float32))
 , metrics=[metrics])
 
 # Train

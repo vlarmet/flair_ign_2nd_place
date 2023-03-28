@@ -80,7 +80,7 @@ list_of_models = inf.load_models(**models_to_load)
 
 # Predict tiles 
 
-for i, patch in tqdm(enumerate(patches[:2])):
+for i, patch in tqdm(enumerate(patches)):
 
     path = MOSAIC_PREDS + patch.replace('/', '_') + '/' 
     if not os.path.exists(path):
@@ -107,10 +107,11 @@ for i, patch in tqdm(enumerate(patches[:2])):
 
 # Split prediction tiles into original 512*512 patches
 
-for i, patch in enumerate(patches[:2]):
+for i, patch in enumerate(patches):
     path = MOSAIC_PREDS + patch.replace('/', '_') + '/'
     bigimg = gdal.Open(path + 'final.tif')
     ULX,_,_,ULY,_,_ = bigimg.GetGeoTransform()
+    
     for img in emprise[patch].keys():
         ulx, uly = emprise[patch][img]
         arr = bigimg.ReadAsArray(

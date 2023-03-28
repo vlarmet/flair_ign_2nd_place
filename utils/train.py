@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import math
 import tensorflow as tf
@@ -6,6 +7,10 @@ from osgeo import gdal
 DATA_DIR = "C:/Users/vincent/Documents/flair/train"
 SEGFORMER_IMAGENET_PATH = "C:/Users/vincent/Downloads/"
 CHECKPOINT_DIR = "C:/Users/vincent/Documents/flair/"
+
+#create checkpoint folder if doesnt exist
+if not os.path.exists(CHECKPOINT_DIR):
+    os.makedirs(CHECKPOINT_DIR)
 
 
 def read_image(image_path, mask=False):
@@ -22,13 +27,14 @@ def read_image(image_path, mask=False):
 
     return image
 
+# Weighted cross entropy loss
 def my_loss(weights):
     def loss(labels, logits):
         labels = tf.cast(labels, tf.int32)
         return tf.compat.v1.losses.sparse_softmax_cross_entropy(labels, logits, tf.gather(weights, labels)) #tf.gather(weights, labels)
     return loss
 
-
+# Weighted cross entropy loss for segformer (include resizing logits)
 def my_loss_segformer(weights):
     def loss(labels, logits):
         logits = tf.image.resize(tf.transpose(logits, perm = (0,2,3,1)), size=(512,512), method="bilinear")
@@ -37,19 +43,20 @@ def my_loss_segformer(weights):
         return tf.compat.v1.losses.sparse_softmax_cross_entropy(labels, logits, tf.gather(weights, labels)) 
     return loss
 
+# Weighted mIOU
 class MyMeanIOU(tf.keras.metrics.MeanIoU):
     def update_state(self, y_true, y_pred, sample_weight=np.array([1,1,1,1,1,1,1,1,1,1,1,1,0])):
 
         return super().update_state(y_true, tf.argmax(y_pred, axis=-1), tf.gather(np.array([1,1,1,1,1,1,1,1,1,1,1,1,0]), tf.cast(y_true, tf.int32)))
         
-
+# Weighted mIOU for segformer
 class MyMeanIOU_segformer(tf.keras.metrics.MeanIoU):
     def update_state(self, y_true, y_pred, sample_weight=np.array([1,1,1,1,1,1,1,1,1,1,1,1,0])):
         y_pred = tf.image.resize(tf.transpose(y_pred, perm = (0,2,3,1)), size=(512,512), method="bilinear")
 
         return super().update_state(y_true, tf.argmax(y_pred, axis=-1), tf.gather(np.array([1,1,1,1,1,1,1,1,1,1,1,1,0]), tf.cast(y_true, tf.int32)))
         
-
+# Data generator used for training
 class Datagen(tf.keras.utils.Sequence):
     def __init__(self, path_list, batch_size, random_state, val_rate, 
                  train, return_x_only = False, augment = None, 

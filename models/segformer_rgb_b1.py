@@ -15,7 +15,7 @@ file_path = os.path.realpath(__file__)
 file_root = "/".join(file_path.replace("\\", "/").split("/")[:-2])
 sys.path.append(file_root + "/utils")
 
-from train import *
+import train as tr
 
 # Global parameters
 BATCH_SIZE = 8
@@ -24,12 +24,12 @@ LR = 0.0001
 
 # Image and mask paths
 img_paths = []
-for dep in os.listdir(DATA_DIR):
-    for zone in os.listdir("/".join([DATA_DIR, dep])):
-        for img in os.listdir("/".join([DATA_DIR, dep, zone, "img"])):
+for dep in os.listdir(tr.DATA_DIR):
+    for zone in os.listdir("/".join([tr.DATA_DIR, dep])):
+        for img in os.listdir("/".join([tr.DATA_DIR, dep, zone, "img"])):
             if img.__contains__("xml"):
                 continue
-            img_path = "/".join([DATA_DIR, dep, zone, "img", img])
+            img_path = "/".join([tr.DATA_DIR, dep, zone, "img", img])
             msk_path = img_path.replace("/img/IMG_", "/msk/MSK_")
             img_paths.append((img_path, msk_path))
 
@@ -45,7 +45,7 @@ transforms = A.Compose([
 
 # Model
 model = TFSegformerForSemanticSegmentation.from_pretrained(
-    SEGFORMER_IMAGENET_PATH + "mit_b1",
+    tr.SEGFORMER_IMAGENET_PATH + "mit_b1",
     num_labels=13
 )
 
@@ -64,17 +64,17 @@ stopping = tf.keras.callbacks.EarlyStopping(
 
 ## Checkpoint
 model_checkpoint_callback  = tf.keras.callbacks.ModelCheckpoint(
-CHECKPOINT_DIR + CHECKPOINT_NAME, monitor='val_loss', verbose=0, save_best_only=True,
+tr.CHECKPOINT_DIR + CHECKPOINT_NAME, monitor='val_loss', verbose=0, save_best_only=True,
 save_weights_only=True, mode='min', save_freq='epoch')
 
 # Metric
-metrics = [MyMeanIOU_segformer(num_classes = 13)]
+metrics = [tr.MyMeanIOU_segformer(num_classes = 13)]
 
 # Train/validation split
 train_path, val_path = train_test_split(img_paths, test_size = 1000, random_state=42)
 
 # Data generators
-train_gen = Datagen(train_path, batch_size = BATCH_SIZE, random_state = 10, val_rate=0, 
+train_gen = tr.Datagen(train_path, batch_size = BATCH_SIZE, random_state = 10, val_rate=0, 
                     train=True, 
                     augment=transforms,
                     normalize = True,
@@ -82,7 +82,7 @@ train_gen = Datagen(train_path, batch_size = BATCH_SIZE, random_state = 10, val_
                     channel_order = [0,1,2],
                     pytorch_style = True) 
 
-val_gen = Datagen(val_path, batch_size = BATCH_SIZE, random_state = 10, val_rate=1, 
+val_gen = tr.Datagen(val_path, batch_size = BATCH_SIZE, random_state = 10, val_rate=1, 
                   train=False, 
                   normalize = True,
                   standardize = True, 
@@ -90,7 +90,7 @@ val_gen = Datagen(val_path, batch_size = BATCH_SIZE, random_state = 10, val_rate
                   pytorch_style = True)
 
 # Compile model
-model.compile(optimizer = optim, loss = my_loss_segformer(np.array([1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0]).astype(np.float32))
+model.compile(optimizer = optim, loss = tr.my_loss_segformer(np.array([1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,0.0]).astype(np.float32))
 , metrics=[metrics])
 
 # Train

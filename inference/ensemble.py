@@ -22,6 +22,11 @@ DATA_DIR = "C:/Users/vincent/Documents/flair/test/"
 OUTPUT_DIR = "C:/Users/vincent/Documents/flair/predictions_test/"
 BATCH_SIZE = 4
 
+# Create working folder
+for folder in [OUTPUT_DIR]:
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
 # Test image paths
 img_paths = []
 for dep in os.listdir(DATA_DIR):
