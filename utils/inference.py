@@ -1,7 +1,9 @@
 import sys
 import os
+import gc
 import importlib
 import numpy as np
+from osgeo import gdal
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -28,11 +30,21 @@ spec.loader.exec_module(module)
 
 import tfdet
 
+# Global parameters
 CHECKPOINT_DIR = "C:/Users/vincent/Documents/flair/"
 
+
 class Vmodel:
-    def __init__(self, model, name=None, tta=None, pytorch_style=False, 
-                 normalize=True, standardize=True, channel_order=[0,1,2,3,4], softmax=True) -> None:
+    def __init__(self, 
+                 model : tf.keras.Model, 
+                 name : str = None, 
+                 tta : callable =None, 
+                 pytorch_style : bool =False, 
+                 normalize : bool =True, 
+                 standardize : bool =True, 
+                 channel_order : list =[0,1,2,3,4], 
+                 softmax : bool =True) -> None:
+        
         self.model = model
         self.name = name
         self.tta = tta
@@ -42,8 +54,9 @@ class Vmodel:
         self.channel_order = channel_order
         self.softmax = softmax
 
-    def predict(self, image) -> np.ndarray:
-        #print(self.name, image[0,:2,:2,0])
+    def predict(self, 
+                image : np.ndarray ) -> np.ndarray:
+        
         image = image.astype(np.float32)
 
         if self.normalize:
@@ -56,7 +69,7 @@ class Vmodel:
                 [0.20264351, 0.1782405 , 0.17575739, 0.15510736, 0.11867123]):
 
                 image[:,:,:,channel] = ((image[:,:,:,channel]) - avg)/std
-        #print(self.name, image[0,:2,:2,0])
+        
         # keep used channel in correct order
         image = image[:,:,:,self.channel_order]
 
@@ -86,27 +99,31 @@ class Vmodel:
 
         return pred
     
-def tta(x, model):
+def tta(x : np.ndarray, 
+        model : tf.keras.Model) -> np.ndarray:
+    
     xs = np.concatenate([np.expand_dims(np.rot90(x, k=i, axes = (0,1)), axis = 0) for i in range(0,4)], axis = 0)
     pred = K.softmax(model.predict(xs))
     preds = np.mean(np.array([np.rot90(pred[i,:,:,:], k = -i, axes = (0,1)) for i in range(0,4)]), axis = 0)
     return preds
 
-def tta_segformer(x, model):
+def tta_segformer(x : np.ndarray, 
+                  model : tf.keras.Model) -> np.ndarray:
+    
     xs = np.concatenate([np.expand_dims(np.rot90(x, k=i, axes = (1,2)), axis = 0) for i in range(0,4)], axis = 0)
     pred = K.softmax(list(model.predict(xs).values())[0], axis = 1)
     preds = np.mean(np.array([np.rot90(pred[i,:,:,:], k = -i, axes = (1,2)) for i in range(0,4)]), axis = 0)
     return preds
 
-def load_models(unet_efficientnetv2s = True,
-                unetpp_convnext = True,
-                segformerb0_5c = True,
-                segformerb1_5c=True,
-                segformerb0_rgb = True,
-                segformerb1_rgb = True,
-                segformerb2_rgb = True,
-                segformerb3_rgb = True,
-                segformerb4_rgb = True) -> list:
+def load_models(unet_efficientnetv2s : bool = True,
+                unetpp_convnext : bool = True,
+                segformerb0_5c : bool = True,
+                segformerb1_5c : bool=True,
+                segformerb0_rgb : bool = True,
+                segformerb1_rgb : bool = True,
+                segformerb2_rgb : bool = True,
+                segformerb3_rgb : bool = True,
+                segformerb4_rgb : bool = True) -> list:
     '''
     Return list containing trained models and associated hyperparameters
     Trained models are used by instantiating "Vmodel" objects.
@@ -297,21 +314,127 @@ def load_models(unet_efficientnetv2s = True,
     return models
 
 
-def predict_ensemble(model_list, img, size_list = [128, 512], target_size = 512):
-    img2 = copy.deepcopy(img)
-    preds = [model.predict(img2) for model in model_list]
+def predict_ensemble(model_list : list, 
+                     img : np.ndarray, 
+                     target_size :int = 512):
+    
+    preds = [model.predict(img) for model in model_list]
+    size_list = set([pred.shape[2] for pred in preds])
+
     # We average each predictions for each output size. We resize after
     res = []
     N = []
+
     for size in size_list:
+
         tmp = [pred for pred in preds if pred.shape[2] == size]
         N.append(len(tmp))
-        tmp = np.mean(np.array(tmp), axis = 0)
+        tmp = np.mean(np.array(tmp), axis = 0)            
         if size != target_size:
             tmp = tf.image.resize(tmp, size = [512,512], method = "bilinear")
         res.append(tmp)
 
     preds = np.sum([n * pred for n, pred in zip(N, res)], axis = 0)/np.sum(N)
+
+
     return preds
 
-##################### Mosaique 
+##################### Mosaic
+# Predict a a large vrt tile, with a (x,y) lag defined in "stride"
+def pred_tif(vrt_path : str, 
+             stride : tuple = (256,256), 
+             size :int = 256 , 
+             tile_path : str = None, 
+             output_name :str = "all",
+             predict_func : callable = None,
+             models : list = None) -> None:
+    
+    stride_x, stride_y = stride
+    rgb = gdal.Open(vrt_path)
+    gt = list(rgb.GetGeoTransform())
+    originY = gt[3]
+    originX = gt[0]
+    width, height = rgb.RasterXSize, rgb.RasterYSize
+    
+    for row in range(stride_y, height, size): 
+        res = []
+        if row + size > height:
+            break
+        for col in range(stride_x, width, size):
+            if col + size > width:
+                break
+            arr = rgb.ReadAsArray(xoff=col, yoff=row, xsize=size, ysize=size).transpose((1,2,0))    
+            arr = np.expand_dims(arr, axis = 0) 
+            res.append(arr)
+        res = np.concatenate(res, axis = 0)
+
+        predictions = []
+        for i in range(res.shape[0]):
+            pred = predict_func(models, res[i:i+1,:,:,:])
+
+            predictions.append(pred)
+        predictions = np.concatenate(predictions, axis = 0)
+
+        preds = [np.argmax(predictions[index,:,:,:], axis = -1) for index in range(predictions.shape[0])]
+        outfile = tile_path + str(row) + ".tif"
+        driver = gdal.GetDriverByName('GTiff')
+        dataset = driver.Create(outfile, col + size, size, 1, gdal.GDT_Byte)
+        preds = np.hstack(preds)
+        dataset.GetRasterBand(1).WriteArray(preds + 1) # +1 pour reconnaitre les zones non predites(=0)
+
+        # follow code is adding GeoTranform and Projection
+        gt[3] = originY + row * gt[5]
+        gt[0] = originX + stride_x * gt[1]
+        proj = rgb.GetProjection() #you can get from a exsited tif or import 
+        dataset.SetGeoTransform(gt)
+        dataset.SetProjection(proj)
+        dataset.FlushCache()
+        dataset=None
+        
+        _ = gc.collect()
+    
+    rgb =  None
+    ds = gdal.BuildVRT(srcDSOrSrcDSTab = ["".join([tile_path,i]) for i in os.listdir(tile_path) if "al" not in i and "rf" not in i], destName = tile_path + output_name + ".vrt")
+    ds = None
+
+    ds = gdal.Warp(srcDSOrSrcDSTab=tile_path + output_name + ".vrt", 
+    destNameOrDestDS=tile_path + output_name + ".tif", 
+    outputType  = gdal.gdalconst.GDT_Byte, 
+    multithread =True, srcSRS = "+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs",
+    outputBounds = (originX, originY + height * gt[5], originX + width * gt[1], originY))
+    ds = None
+
+    # effacer tuiles
+    tiles = [os.remove(tile_path + i) for i in os.listdir(tile_path) if "al" not in i and "rf" not in i]
+
+    return 
+
+
+# Merge all predictions of a given vrt tile by majority voting
+def merge_all(file_list : list,
+              output : str):
+    
+    driver = gdal.GetDriverByName('GTiff')
+    ds1 = gdal.Open(file_list[0])
+
+    dataset = driver.Create(output, ds1.RasterXSize, ds1.RasterYSize, 1, gdal.GDT_Byte)
+        
+    step = int(ds1.RasterXSize/10)
+    for col in range(0, ds1.RasterXSize, step):
+        if col + step > ds1.RasterXSize:
+            step = ds1.RasterXSize - col
+        #print(col)
+        arrs = np.concatenate(list(map(lambda x: np.expand_dims(gdal.Open(x).ReadAsArray(xoff = col, yoff= 0, xsize= step), axis = 2), file_list)), axis = -1)
+        
+        arr2 = np.concatenate([np.expand_dims((arrs == i).sum(axis = 2), axis = 2) for i in range(1,14)], axis = -1)
+        arr2 = np.argmax(arr2, axis = -1)
+
+        dataset.GetRasterBand(1).WriteArray(arr2, xoff = col, yoff= 0)
+        dataset.FlushCache()
+        gc.collect()
+
+
+    dataset.SetGeoTransform(ds1.GetGeoTransform())
+    dataset.SetProjection(ds1.GetProjection())
+    
+    dataset=ds1 = None
